@@ -1,0 +1,42 @@
+[project]
+name = "user-statistics-analysis"
+version = "0.1.0"
+description = "이용자 통계분석 서비스 백엔드 API"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.141.1",
+    "numpy>=2.5.3",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+    "sqlmodel>=0.0.42",
+    "statsmodels>=0.15.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.7",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF", "EM", "TRY", "BLE"]
+ignore = ["RUF001", "RUF002", "RUF003", "TRY003", "TRY300", "B008", "EM101", "EM102"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
