@@ -29,7 +29,11 @@ _TRACKED = ("pandas", "numpy", "scikit-learn", "statsmodels", "scipy", "fastapi"
 
 
 def _environment() -> dict[str, Any]:
-    """재현 시 결과 차이를 설명할 수 있도록 실행 환경을 기록한다."""
+    """재현 시 결과 차이를 설명할 수 있도록 실행 환경을 기록한다.
+
+    Returns:
+        dict[str, Any]: 파이썬 버전, 플랫폼, 주요 라이브러리 버전 정보.
+    """
     packages: dict[str, str] = {}
     for name in _TRACKED:
         try:
@@ -203,7 +207,14 @@ def _readme(package: AnalysisPackage, dataset: Dataset, analyses: list[Analysis]
 
 
 def _report(analysis: Analysis) -> str:
-    """사람이 읽는 분석 리포트."""
+    """사람이 읽는 분석 리포트.
+
+    Args:
+        analysis (Analysis): 리포트를 생성할 분석 객체.
+
+    Returns:
+        str: 분석 개요·성능 지표·전처리 로직·분석 조건·계수를 담은 마크다운 문자열.
+    """
     lines = [
         f"# {analysis.name}",
         "",
@@ -252,7 +263,21 @@ def revoke_share_token(session: Session, package: AnalysisPackage) -> AnalysisPa
 def reproduce(
     session: Session, package: AnalysisPackage, *, dataset_id: str | None, name_suffix: str
 ) -> ReproduceResult:
-    """패키지에 보존된 조건으로 분석을 재실행하고 원본 지표와 대조한다."""
+    """패키지에 보존된 조건으로 분석을 재실행하고 원본 지표와 대조한다.
+
+    Args:
+        session (Session): DB 세션.
+        package (AnalysisPackage): 재현할 대상 패키지.
+        dataset_id (str | None): 재현에 사용할 데이터셋 식별자. 미지정 시 패키지에 기록된 원본 데이터셋을 사용.
+        name_suffix (str): 재현된 분석 이름에 덧붙일 접미사.
+
+    Raises:
+        AnalysisError: 재현할 데이터셋을 지정할 수 없는 경우(dataset_id와 패키지 기록 모두 없음).
+        NotFoundError: 지정된 데이터셋을 찾을 수 없는 경우.
+
+    Returns:
+        ReproduceResult: 재현된 분석 ID 목록과 원본 지표와의 비교 결과.
+    """
     from app.services.runner import create_analysis
 
     target_id = dataset_id or package.dataset_id

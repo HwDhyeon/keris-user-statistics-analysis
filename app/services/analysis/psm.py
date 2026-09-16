@@ -16,7 +16,7 @@ from app.services.preprocessing import build_design_matrix
 
 
 class PSMEngine:
-    """로지스틱 회귀로 성향점수를 산출하고, 최근접이웃 매칭으로 처치/대조군 균형을 맞춘다."""
+    """성향점수매칭(PSM) 엔진. 로지스틱 회귀로 성향점수를 산출하고, 최근접이웃 매칭으로 처치/대조군 균형을 맞춘다."""
 
     method = AnalysisMethod.PSM
 

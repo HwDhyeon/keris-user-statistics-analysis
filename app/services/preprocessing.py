@@ -16,7 +16,18 @@ from app.services.profiling import outlier_mask
 
 @dataclass
 class DesignMatrix:
-    """모델 적합에 바로 쓸 수 있는 형태로 정리된 데이터."""
+    """모델 적합에 바로 쓸 수 있는 형태로 정리된 데이터.
+
+    Attributes:
+        X (pd.DataFrame): 인코딩·스케일링이 끝난 독립변수 설계행렬.
+        y (pd.Series | None): 종속변수. target을 지정하지 않은 경우 None.
+        weights (pd.Series | None): 가중치. weight_column을 지정하지 않은 경우 None.
+        frame (pd.DataFrame): 전처리(필터·결측·이상치 제거 등)를 거친 원본 형태의 데이터프레임.
+        feature_names (list[str]): X의 열 이름 목록(인코딩 후 파생열 포함).
+        feature_origin (dict[str, str]): 원-핫 파생열 이름 → 원본 변수 이름 매핑.
+        target_classes (list[Any] | None): target_as_category=True일 때 종속변수의 클래스 목록.
+        steps (list[dict[str, Any]]): 적용된 전처리 단계 기록(재현 및 리포트에 사용).
+    """
 
     X: pd.DataFrame
     y: pd.Series | None
@@ -35,6 +46,7 @@ def apply_filters(frame: pd.DataFrame, filters: list[FilterCondition]) -> tuple[
         if cond.column not in frame.columns:
             msg = f"필터 대상 변수를 찾을 수 없습니다: {cond.column}"
             raise AnalysisError(msg)
+
         before = len(frame)
         series = frame[cond.column]
         match cond.op:
@@ -65,6 +77,7 @@ def apply_filters(frame: pd.DataFrame, filters: list[FilterCondition]) -> tuple[
             case _:  # pragma: no cover - Literal로 제한됨
                 msg = f"지원하지 않는 필터 연산자: {cond.op}"
                 raise AnalysisError(msg)
+
         frame = frame[mask.fillna(False)]
         steps.append(
             {
@@ -76,11 +89,20 @@ def apply_filters(frame: pd.DataFrame, filters: list[FilterCondition]) -> tuple[
                 "rows_after": len(frame),
             }
         )
+
     return frame, steps
 
 
 def handle_missing(frame: pd.DataFrame, spec: PreprocessingSpec) -> tuple[pd.DataFrame, list[dict]]:
-    """열별 대치를 먼저 적용하고, 남은 결측치를 전역 전략으로 처리한다."""
+    """열별 대치를 먼저 적용하고, 남은 결측치를 전역 전략으로 처리한다.
+
+    Args:
+        frame (pd.DataFrame): 결측치를 처리할 데이터프레임.
+        spec (PreprocessingSpec): 열별 대치 지정과 전역 결측치 처리 전략을 담은 전처리 스펙.
+
+    Returns:
+        tuple[pd.DataFrame, list[dict]]: 결측치가 처리된 데이터프레임과 적용된 처리 단계 기록.
+    """
     steps: list[dict] = []
 
     for imputation in spec.column_imputations:
@@ -145,7 +167,17 @@ def _impute_series(series: pd.Series, strategy: ImputeStrategy, fill_value: Any)
 def remove_outlier_rows(
     frame: pd.DataFrame, columns: list[str], method: OutlierMethod, threshold: float
 ) -> tuple[pd.DataFrame, list[dict]]:
-    """선택한 방식(IQR/Z-score/Modified Z-score/Isolation Forest)으로 이상치 행을 제거한다."""
+    """선택한 방식(IQR/Z-score/Modified Z-score/Isolation Forest)으로 이상치 행을 제거한다.
+
+    Args:
+        frame (pd.DataFrame): 이상치를 제거할 데이터프레임.
+        columns (list[str]): 이상치 탐지 대상 열 목록.
+        method (OutlierMethod): 이상치 탐지 방법.
+        threshold (float): 이상치 판정 임계값.
+
+    Returns:
+        tuple[pd.DataFrame, list[dict]]: 이상치 행이 제거된 데이터프레임과 적용된 처리 단계 기록.
+    """
     steps: list[dict] = []
     for col in columns:
         if col not in frame.columns:
@@ -174,7 +206,18 @@ def remove_outlier_rows(
 
 
 def apply_category_orders(frame: pd.DataFrame, orders: dict[str, list[Any]]) -> tuple[pd.DataFrame, list[dict]]:
-    """지정된 범주 순서를 ordered Categorical로 고정한다."""
+    """지정된 범주 순서를 ordered Categorical로 고정한다.
+
+    Args:
+        frame (pd.DataFrame): 범주 순서를 적용할 데이터프레임.
+        orders (dict[str, list[Any]]): 변수별로 유지할 범주 순서(예: {"학년": ["1학년", "2학년", "3학년"]}).
+
+    Raises:
+        AnalysisError: 데이터에 존재하는 값이 지정된 범주 순서 목록에 없는 경우.
+
+    Returns:
+        tuple[pd.DataFrame, list[dict]]: 범주 순서가 적용된 데이터프레임과 적용된 처리 단계 기록.
+    """
     steps: list[dict] = []
     if not orders:
         return frame, steps
@@ -195,7 +238,20 @@ def apply_category_orders(frame: pd.DataFrame, orders: dict[str, list[Any]]) -> 
 def encode_features(
     frame: pd.DataFrame, features: list[str], spec: PreprocessingSpec
 ) -> tuple[pd.DataFrame, dict[str, str], list[dict]]:
-    """범주형 변수를 인코딩하고 파생열 → 원본 변수 매핑을 돌려준다."""
+    """범주형 변수를 인코딩하고 파생열 → 원본 변수 매핑을 돌려준다.
+
+    Args:
+        frame (pd.DataFrame): 인코딩 대상 데이터를 담은 데이터프레임.
+        features (list[str]): 인코딩할 변수(열) 이름 목록.
+        spec (PreprocessingSpec): 인코딩 방식(ONEHOT/ORDINAL)과 범주 순서·drop_first 등을 담은 전처리 스펙.
+
+    Raises:
+        AnalysisError: 인코딩 후 사용할 수 있는 독립변수가 하나도 없는 경우.
+
+    Returns:
+        tuple[pd.DataFrame, dict[str, str], list[dict]]: 인코딩된 설계행렬, 파생열 → 원본 변수 매핑,
+            적용된 처리 단계 기록.
+    """
     steps: list[dict] = []
     pieces: list[pd.DataFrame] = []
     origin: dict[str, str] = {}
@@ -270,11 +326,28 @@ def build_design_matrix(
     target_as_category: bool = False,
     extra_columns: list[str] | None = None,
 ) -> DesignMatrix:
-    """필터 → 결측 처리 → 이상치 제거 → 범주 순서 → 인코딩 → 스케일링.
+    """필터 → 결측 처리 → 이상치 제거 → 범주 순서 → 인코딩 → 스케일링 순으로 전체 전처리 파이프라인을 적용해 설계행렬을 만든다.
 
     extra_columns는 위계 집단(group_column)·시점(time_column)처럼 인코딩 대상은
     아니지만 전처리(필터·결측 처리)는 함께 거쳐야 하는 변수에 사용한다.
     결과의 frame(design.frame)에는 남지만 X(인코딩된 설계행렬)에는 포함되지 않는다.
+
+    Args:
+        frame (pd.DataFrame): 원본 데이터프레임.
+        features (list[str]): 독립변수로 사용할 열 이름 목록.
+        target (str | None): 종속변수 열 이름. 지도학습이 아니면 None.
+        weight_column (str | None): 가중치로 사용할 열 이름. 미지정 시 가중치 없음.
+        spec (PreprocessingSpec): 필터·결측치·이상치·인코딩·스케일링 등 전처리 스펙.
+        target_as_category (bool, optional): True면 target을 범주형(분류 라벨)로 처리한다. Defaults to False.
+        extra_columns (list[str] | None, optional): 인코딩 대상은 아니지만 필터·결측 처리는 함께 적용할 부가 변수 목록. Defaults to None.
+
+    Raises:
+        AnalysisError: 지정한 변수가 데이터셋에 없거나, 전처리 후 남은 데이터가 없거나,
+            가중치 변수가 유효하지 않거나(수치가 아니거나 음수), 인코딩 후 유효한 행이 없거나,
+            종속변수를 수치로 변환할 수 없거나, 분석 가능한 행이 3건 미만인 경우.
+
+    Returns:
+        DesignMatrix: 모델 적합에 바로 사용할 수 있는 설계행렬과 관련 메타데이터.
     """
     steps: list[dict] = []
     extras = [c for c in (target, weight_column, *(extra_columns or [])) if c]

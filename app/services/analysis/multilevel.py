@@ -88,7 +88,7 @@ def _random_effects_rows(fit: Any, re_names: list[str]) -> list[dict[str, Any]]:
 
 
 class MultilevelEngine:
-    """다층모형(HLM). 학생 within 학급/학교 같은 위계구조에서 집단 간·집단 내 변동을 분리한다."""
+    """다층모형(HLM) 엔진. 학생 within 학급/학교 같은 위계구조에서 집단 간·집단 내 변동을 분리한다."""
 
     method = AnalysisMethod.MULTILEVEL
 
@@ -206,7 +206,7 @@ class MultilevelEngine:
 
 
 class GrowthCurveEngine:
-    """성장모형(확률효과 방식). 패널 개체별 시간에 따른 변화 궤적을 추적한다."""
+    """성장모형(확률효과 방식) 엔진. 패널 개체별 시간에 따른 변화 궤적을 추적한다."""
 
     method = AnalysisMethod.GROWTH_CURVE
 

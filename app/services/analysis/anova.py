@@ -17,12 +17,19 @@ from app.services.preprocessing import apply_category_orders, apply_filters, han
 
 
 def _quote(column: str) -> str:
-    """patsy 수식에서 한글·공백 등을 포함한 변수명을 안전하게 참조한다."""
+    """patsy 수식에서 한글·공백 등을 포함한 변수명을 안전하게 참조한다.
+
+    Args:
+        column (str): 수식에 사용할 원본 변수 이름.
+
+    Returns:
+        str: patsy의 Q() 구문으로 감싼 변수 참조 문자열.
+    """
     return f"Q('{column}')"
 
 
 class AnovaEngine:
-    """일원/이원 분산분석과 공변량을 포함한 공분산분석을 함께 지원한다.
+    """일원/이원 분산분석과 공변량을 포함한 공분산분석을 함께 지원하는 엔진.
 
     covariates가 비어 있으면 ANOVA, 1개 이상이면 ANCOVA로 동작한다.
     """

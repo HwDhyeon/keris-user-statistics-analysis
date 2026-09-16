@@ -25,7 +25,16 @@ from app.services.preprocessing import build_design_matrix
 
 
 def tree_to_dict(tree: Any, feature_names: list[str], class_labels: list[str] | None) -> dict[str, Any]:
-    """sklearn 트리를 중첩 딕셔너리(트리 구조도용)로 변환한다."""
+    """sklearn 트리를 중첩 딕셔너리(트리 구조도용)로 변환한다.
+
+    Args:
+        tree (Any): 학습된 sklearn 의사결정나무 모델(DecisionTreeClassifier/Regressor).
+        feature_names (list[str]): 분기 조건에 사용할 변수 이름 목록.
+        class_labels (list[str] | None): 분류 모델의 클래스 라벨 목록. 회귀 모델이면 None.
+
+    Returns:
+        dict[str, Any]: 루트 노드부터 재귀적으로 children을 포함하는 트리 구조 딕셔너리.
+    """
     t = tree.tree_
 
     def build(node: int, depth: int) -> dict[str, Any]:

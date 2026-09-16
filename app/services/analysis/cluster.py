@@ -17,7 +17,16 @@ from app.services.preprocessing import build_design_matrix
 
 
 def _quality(X: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
-    """군집 품질 지표. 잡음(-1)은 제외하고 계산한다."""
+    """군집 품질 지표를 계산한다. 잡음(-1)은 제외하고 계산한다.
+
+    Args:
+        X (np.ndarray): 군집화에 사용된 설계행렬.
+        labels (np.ndarray): 각 표본에 배정된 군집 라벨(잡음은 -1).
+
+    Returns:
+        dict[str, Any]: 실루엣 계수, Calinski-Harabasz 지수, Davies-Bouldin 지수.
+            유효 군집이 2개 미만이거나 표본이 3개 미만이면 모두 None.
+    """
     mask = labels >= 0
     unique = np.unique(labels[mask])
     if unique.size < 2 or mask.sum() < 3:
@@ -31,9 +40,17 @@ def _quality(X: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
 
 
 def _profiles(frame: pd.DataFrame, labels: np.ndarray, features: list[str]) -> list[dict[str, Any]]:
-    """군집별 크기와 변수 평균(군집 해석 근거).
+    """군집별 크기와 변수 평균(군집 해석 근거)을 계산한다.
 
     z_means는 전체 평균 대비 표준화 편차로, 군집별 프로파일 비교 막대차트에 바로 쓸 수 있다.
+
+    Args:
+        frame (pd.DataFrame): 원본(비인코딩) 데이터프레임.
+        labels (np.ndarray): 각 표본에 배정된 군집 라벨.
+        features (list[str]): 프로파일을 계산할 변수 목록.
+
+    Returns:
+        list[dict[str, Any]]: 군집 번호 순으로 정렬된 군집별 크기·비율·평균·중앙값·표준화 편차 목록.
     """
     tagged = frame.copy()
     tagged["_cluster"] = labels
@@ -61,7 +78,17 @@ def _profiles(frame: pd.DataFrame, labels: np.ndarray, features: list[str]) -> l
 
 
 def _anova_f_tests(frame: pd.DataFrame, labels: np.ndarray, features: list[str]) -> list[dict[str, Any]]:
-    """변수별 일원분산분석(F검정): 군집이 각 변수를 통계적으로 유의하게 구분하는지 확인한다."""
+    """변수별 일원분산분석(F검정): 군집이 각 변수를 통계적으로 유의하게 구분하는지 확인한다.
+
+    Args:
+        frame (pd.DataFrame): 원본(비인코딩) 데이터프레임.
+        labels (np.ndarray): 각 표본에 배정된 군집 라벨.
+        features (list[str]): 검정할 변수 목록.
+
+    Returns:
+        list[dict[str, Any]]: 변수별 F통계량, p-value, 유의수준(0.001/0.01/0.05)별 유의 여부.
+            군집이 2개 미만이면 해당 변수는 결과에서 제외된다.
+    """
     unique_labels = np.unique(labels)
     results: list[dict[str, Any]] = []
     for col in features:
@@ -96,10 +123,22 @@ def _cluster_rows(
     features: list[str],
     label_columns: list[str],
 ) -> pd.DataFrame:
-    """표본별 원시데이터 + 대표변수 실측/예측(군집평균)/잔차 + 중심으로부터 거리.
+    """표본별 원시데이터 + 대표변수 실측/예측(군집평균)/잔차 + 중심으로부터 거리를 담은 표를 만든다.
 
     예측치는 각 표본이 속한 군집의 대표변수(첫 번째 피처) 평균값이다. 거리는 표준화된
     설계행렬(X) 공간에서 배정된 군집 중심까지의 유클리드 거리로, 군집 적합도의 지표다.
+
+    Args:
+        frame (pd.DataFrame): 원본(비인코딩) 데이터프레임.
+        X (pd.DataFrame): 인코딩·스케일링된 설계행렬.
+        labels (np.ndarray): 각 표본에 배정된 군집 라벨.
+        centroids (np.ndarray): 군집 중심 좌표(X와 동일한 공간).
+        profiles (list[dict[str, Any]]): _profiles가 계산한 군집별 프로파일(대표변수 평균 조회용).
+        features (list[str]): 표에 포함할 변수 목록.
+        label_columns (list[str]): 원시데이터·잔차표에 함께 표시할 식별자 변수 목록.
+
+    Returns:
+        pd.DataFrame: 행 ID, 군집, 실측/예측/잔차, 중심까지 거리, 식별자·특성 변수를 담은 표.
     """
     primary = features[0]
     cluster_mean = {p["cluster"]: p["means"].get(primary) for p in profiles}
@@ -134,10 +173,19 @@ def _cluster_rows(
 def _projection(
     X: pd.DataFrame, labels: np.ndarray, centroids: np.ndarray | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame | None]:
-    """2차원 산점도용 좌표. 변수가 3개 이상이면 PCA로 축약한다.
+    """2차원 산점도용 좌표를 계산한다. 변수가 3개 이상이면 PCA로 축약한다.
 
     열 이름은 x/y로 고정하고, 축이 실제로 무엇인지는 x_label/y_label에 담는다.
     centroids를 주면 포인트와 동일한 좌표계(동일 PCA 변환)로 투영해 함께 반환한다.
+
+    Args:
+        X (pd.DataFrame): 군집화에 사용된 설계행렬.
+        labels (np.ndarray): 각 표본에 배정된 군집 라벨.
+        centroids (np.ndarray | None, optional): 함께 투영할 군집 중심 좌표. Defaults to None.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame | None]: 표본별 2차원 좌표(x, y, cluster, x_label, y_label)와,
+            centroids를 지정한 경우 동일 좌표계로 투영된 중심점 좌표(없으면 None).
     """
     centroid_values: np.ndarray | None = None
     if X.shape[1] >= 2:
@@ -182,7 +230,16 @@ def _projection(
 def _cluster_scatter_rec(
     X: pd.DataFrame, reason: str = "군집 간 분리 정도를 2차원에서 확인", has_centroids: bool = False
 ) -> Any:
-    """군집 산점도 추천. 변수가 3개 이상이면 좌표가 주성분으로 축약됨을 알린다."""
+    """군집 산점도 추천을 만든다. 변수가 3개 이상이면 좌표가 주성분으로 축약됨을 알린다.
+
+    Args:
+        X (pd.DataFrame): 군집화에 사용된 설계행렬(차원 축소 여부 판단용).
+        reason (str, optional): 추천 이유. Defaults to "군집 간 분리 정도를 2차원에서 확인".
+        has_centroids (bool, optional): 중심점 데이터(centroid_projection)를 함께 제공하는지 여부. Defaults to False.
+
+    Returns:
+        Any: 군집 산점도 차트 추천 객체(ChartRecommendation).
+    """
     reduced = X.shape[1] > 2
     return rec(
         ChartKind.CLUSTER_SCATTER,

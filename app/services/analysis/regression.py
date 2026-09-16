@@ -27,7 +27,7 @@ from app.services.preprocessing import build_design_matrix
 
 
 class LinearRegressionEngine:
-    """OLS / WLS 선형회귀. 결정계수, RMSE 등 전문 지표를 함께 산출한다."""
+    """OLS/WLS 선형회귀 엔진. 결정계수, RMSE 등 전문 지표를 함께 산출한다."""
 
     method = AnalysisMethod.LINEAR_REGRESSION
 
@@ -257,7 +257,7 @@ class LinearRegressionEngine:
 
 
 class LogisticRegressionEngine:
-    """이항/다항 로지스틱 회귀분석."""
+    """이항/다항 로지스틱 회귀분석 엔진."""
 
     method = AnalysisMethod.LOGISTIC_REGRESSION
 

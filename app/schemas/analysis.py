@@ -29,7 +29,23 @@ class ColumnImputation(BaseModel):
 
 
 class PreprocessingSpec(BaseModel):
-    """전처리 로직. 패키지에 그대로 보존되어 재현에 사용된다."""
+    """분석 전 적용할 전처리 로직. 패키지에 그대로 보존되어 재현에 사용된다.
+
+    Attributes:
+        filters (list[FilterCondition]): 행 필터링 조건 목록.
+        drop_duplicates (bool): 중복 행 제거 여부.
+        missing_strategy (ImputeStrategy): 결측치 처리 전략.
+        missing_fill_value (Any): missing_strategy가 CONSTANT일 때 채울 값.
+        column_imputations (list[ColumnImputation]): 열별 개별 결측치 처리 지정 목록.
+        remove_outliers (bool): 이상치 제거 여부.
+        outlier_columns (list[str]): 이상치 탐지 대상 열 목록.
+        outlier_method (OutlierMethod): 이상치 탐지 방법.
+        outlier_threshold (float): 이상치 판정 임계값(IQR은 사분위범위 배수, Z-score·Modified Z-score는 절단 임계값).
+        scaling (ScaleStrategy): 스케일링 전략.
+        encoding (EncodeStrategy): 범주형 인코딩 방식.
+        category_orders (dict[str, list[Any]]): 변수별로 유지할 범주 순서(예: {"학년": ["1학년", "2학년", "3학년"]}).
+        drop_first (bool): 원-핫 인코딩 시 첫 범주를 기준(reference)으로 제거할지 여부.
+    """
 
     filters: list[FilterCondition] = Field(default_factory=list)
     drop_duplicates: bool = False
@@ -50,7 +66,42 @@ class PreprocessingSpec(BaseModel):
 
 
 class AnalysisParams(BaseModel):
-    """분석 파라미터. 기법별로 사용하는 항목이 다르다."""
+    """분석 실행 파라미터. 기법별로 사용하는 항목이 다르다.
+
+    Attributes:
+        target (str | None): 종속변수.
+        features (list[str]): 독립변수(다중 선택).
+        weight_column (str | None): 가중치 변수.
+        test_size (float): 검증용으로 분리할 비율. 0이면 홀드아웃 없이 전체 적합.
+        random_state (int): 재현성을 위한 난수 시드.
+        fit_intercept (bool): 회귀 절편 포함 여부.
+        include_diagnostics (bool): 회귀 진단(잔차 등) 포함 여부.
+        positive_label (Any): 로지스틱 회귀에서 양성 클래스로 취급할 값.
+        max_iter (int): 로지스틱 회귀 등 반복 최적화의 최대 반복 횟수.
+        max_depth (int | None): 의사결정나무 최대 깊이.
+        min_samples_split (int): 의사결정나무 노드 분할에 필요한 최소 표본 수.
+        min_samples_leaf (int): 의사결정나무 리프 노드의 최소 표본 수.
+        criterion (str | None): 의사결정나무 분할 기준.
+        ccp_alpha (float): 의사결정나무 비용복잡도 가지치기 파라미터.
+        n_clusters (int): 군집 개수(KMeans·계층적 군집).
+        linkage (Literal["ward", "complete", "average", "single"]): 계층적 군집의 연결 방식.
+        eps (float): DBSCAN 반경(eps).
+        min_samples (int): DBSCAN 핵심 포인트 판정에 필요한 최소 이웃 수.
+        auto_k_range (list[int] | None): [최소, 최대] 지정 시 엘보/실루엣 기반 군집 수 자동 탐색.
+        label_columns (list[str]): 원시데이터·잔차표에 표시할 식별자 변수(예: 학교코드, 지역구분). 군집분석에는 사용되지 않음.
+        n_components (int): 차원축소(PCA) 시 산출할 주성분 개수.
+        correlation_method (Literal["pearson", "spearman", "kendall"]): 상관분석 방법.
+        factors (list[str]): ANOVA 요인(범주형 독립변수).
+        covariates (list[str]): ANCOVA 공변량(연속형).
+        include_interaction (bool): 요인이 2개일 때 교호작용항 포함 여부.
+        group_column (str | None): 위계 집단(학급·학교 등) 또는 패널 개체 식별 변수.
+        time_column (str | None): 성장모형의 시점(시간) 변수.
+        random_slope (bool): 시간(또는 주 예측변수)에 대한 확률기울기 포함 여부.
+        treatment_column (str | None): 처치/프로그램 참여 여부 변수(이분형).
+        caliper (float | None): 매칭 허용 거리(표준화 성향점수 기준). 미지정 시 자동 산출.
+        n_neighbors (int): 처치군 1건당 매칭할 대조군 수.
+        matching_replacement (bool): 대조군 중복 매칭 허용 여부.
+    """
 
     # 공통
     target: str | None = Field(default=None, description="종속변수")
@@ -116,6 +167,12 @@ class ChartDataOptions(BaseModel):
     """차트용 데이터 산출 옵션.
 
     렌더링은 웹에서 수행하므로 백엔드는 그릴 재료(집계된 데이터)만 만들어 준다.
+
+    Attributes:
+        include (bool): false면 추천만 제공하고 데이터는 생략.
+        max_points (int): 산점도 등 원시 점 개수 상한.
+        histogram_bins (int): 히스토그램 구간 수.
+        max_categories (int): 범주형 빈도 상위 N개.
     """
 
     include: bool = Field(default=True, description="false면 추천만 제공하고 데이터는 생략")
@@ -184,7 +241,17 @@ class AnalysisCreate(BaseModel):
 
 
 class ChartRecommendation(BaseModel):
-    """어떤 차트를 그리면 좋은지에 대한 제안. 렌더링은 클라이언트가 수행한다."""
+    """어떤 차트를 그리면 좋은지에 대한 제안. 렌더링은 클라이언트가 수행한다.
+
+    Attributes:
+        kind (ChartKind): 추천 차트 종류.
+        title (str): 차트 제목.
+        reason (str): 이 차트를 추천하는 이유.
+        priority (int): 추천 우선순위(작을수록 우선).
+        data_key (str | None): chart_data 내 이 차트가 사용할 데이터 키.
+        encoding (dict[str, str]): 축·색 등에 대응하는 데이터 필드명(x, y, color, label 등).
+        options (dict[str, Any]): 참조선·정렬 등 렌더링 힌트.
+    """
 
     kind: ChartKind
     title: str

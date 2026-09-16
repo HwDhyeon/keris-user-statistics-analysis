@@ -16,7 +16,11 @@ engine = create_engine(settings.database_url, **engine_kwargs)
 
 
 def init_db() -> None:
-    """테이블 생성. 모델 모듈을 먼저 임포트해야 메타데이터에 등록된다."""
+    """SQLModel 메타데이터에 등록된 테이블을 모두 생성한다.
+
+    모델 모듈을 먼저 임포트해야 테이블 클래스가 메타데이터에 등록되므로,
+    임포트 이후 create_all을 호출해 테이블을 생성한다.
+    """
     import app.models  # noqa: F401
 
     SQLModel.metadata.create_all(engine)

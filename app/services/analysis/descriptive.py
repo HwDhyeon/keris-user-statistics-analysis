@@ -10,7 +10,16 @@ from app.services.preprocessing import apply_category_orders, apply_filters, han
 
 
 def _prepare(frame: pd.DataFrame, params: AnalysisParams, spec: PreprocessingSpec) -> tuple[pd.DataFrame, list[dict]]:
-    """군집/회귀와 달리 인코딩 없이 필터·결측 처리만 적용한다."""
+    """군집/회귀와 달리 인코딩 없이 필터·결측 처리만 적용한다.
+
+    Args:
+        frame (pd.DataFrame): 원본 데이터프레임.
+        params (AnalysisParams): 분석 대상 변수(features)를 담은 파라미터.
+        spec (PreprocessingSpec): 필터·결측 처리·범주 순서 등 전처리 스펙.
+
+    Returns:
+        tuple[pd.DataFrame, list[dict]]: 전처리가 적용된 데이터프레임과 적용된 처리 단계 기록.
+    """
     columns = params.features or list(frame.columns)
     work = frame[[c for c in columns if c in frame.columns]].copy()
     work, steps = apply_filters(work, spec.filters)
@@ -22,7 +31,7 @@ def _prepare(frame: pd.DataFrame, params: AnalysisParams, spec: PreprocessingSpe
 
 
 class DescriptiveEngine:
-    """기초 통계량 + 결측/이상치 요약."""
+    """기초 통계량 + 결측/이상치 요약을 산출하는 기술통계 분석 엔진."""
 
     method = AnalysisMethod.DESCRIPTIVE
 
@@ -85,7 +94,7 @@ class DescriptiveEngine:
 
 
 class CorrelationEngine:
-    """변수 간 상관관계 사전 파악."""
+    """변수 간 상관관계를 사전 파악하는 상관분석 엔진."""
 
     method = AnalysisMethod.CORRELATION
 

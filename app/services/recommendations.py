@@ -41,7 +41,16 @@ DEFAULT_RECOMMENDATIONS: dict[AnalysisMethod, list[ChartKind]] = {
 
 
 def recommend(outcome: AnalysisOutcome, method: AnalysisMethod) -> list[ChartRecommendation]:
-    """엔진 추천과 기법별 기본값을 병합해 우선순위 순으로 반환한다."""
+    """엔진 추천과 기법별 기본값을 병합해 우선순위 순으로 반환한다.
+
+    Args:
+        outcome (AnalysisOutcome): 분석 엔진이 산출한 결과(추천 목록 포함).
+        method (AnalysisMethod): 수행된 분석 기법.
+
+    Returns:
+        list[ChartRecommendation]: 엔진 추천과 기법별 기본 추천을 중복 없이 병합해 우선순위 순으로 정렬한 목록.
+    """
+
     seen = {r.kind for r in outcome.recommendations}
     merged = list(outcome.recommendations)
     for i, kind in enumerate(DEFAULT_RECOMMENDATIONS.get(method, [])):
@@ -54,13 +63,22 @@ def recommend(outcome: AnalysisOutcome, method: AnalysisMethod) -> list[ChartRec
                     priority=10 + i,
                 )
             )
+
     return sorted(merged, key=lambda r: r.priority)
 
 
-def build_chart_data(
-    outcome: AnalysisOutcome, method: AnalysisMethod, options: ChartDataOptions
-) -> dict[str, Any]:
-    """추천 차트가 참조할 데이터를 키별로 만든다."""
+def build_chart_data(outcome: AnalysisOutcome, method: AnalysisMethod, options: ChartDataOptions) -> dict[str, Any]:
+    """추천 차트가 참조할 데이터를 키별로 만든다.
+
+    Args:
+        outcome (AnalysisOutcome): 분석 엔진이 산출한 결과(원시 산출물 포함).
+        method (AnalysisMethod): 수행된 분석 기법.
+        options (ChartDataOptions): 표본 점 개수·히스토그램 구간 수 등 차트 데이터 산출 옵션.
+
+    Returns:
+        dict[str, Any]: 차트 종류별로 그릴 재료가 되는 집계 데이터 딕셔너리. include=False면 빈 딕셔너리.
+    """
+
     if not options.include:
         return {}
 
@@ -139,7 +157,15 @@ def build_chart_data(
 
 
 def dataset_chart_data(frame: pd.DataFrame, options: ChartDataOptions) -> dict[str, Any]:
-    """데이터셋 탐색용 분포 데이터 (기술통계·리포트 공용)."""
+    """데이터셋 탐색용 분포 데이터 (기술통계·리포트 공용).
+
+    Args:
+        frame (pd.DataFrame): 대상 데이터프레임.
+        options (ChartDataOptions): 히스토그램 구간 수·범주 상위 개수 등 차트 데이터 산출 옵션.
+
+    Returns:
+        dict[str, Any]: 히스토그램, 상자그림, 범주별 빈도, 결측 비율 등을 담은 집계 데이터.
+    """
     from app.services.ingest import infer_role
     from app.services.profiling import numeric_columns
 
@@ -165,8 +191,7 @@ def dataset_chart_data(frame: pd.DataFrame, options: ChartDataOptions) -> dict[s
         counts = frame[col].value_counts().head(options.max_categories)
         total = int(frame[col].notna().sum()) or 1
         categories[str(col)] = [
-            {"value": str(k), "count": int(v), "ratio": round(int(v) / total, 6)}
-            for k, v in counts.items()
+            {"value": str(k), "count": int(v), "ratio": round(int(v) / total, 6)} for k, v in counts.items()
         ]
         if len(categories) >= 20:
             break
@@ -185,7 +210,15 @@ def dataset_chart_data(frame: pd.DataFrame, options: ChartDataOptions) -> dict[s
 
 
 def dataset_recommendations(frame: pd.DataFrame, has_correlation: bool) -> list[ChartRecommendation]:
-    """데이터셋 탐색 리포트용 추천."""
+    """데이터셋 탐색 리포트용 추천.
+
+    Args:
+        frame (pd.DataFrame): 대상 데이터프레임.
+        has_correlation (bool): 상관관계 분석 결과(2개 이상의 수치형 변수)가 있는지 여부.
+
+    Returns:
+        list[ChartRecommendation]: 상관 히트맵·산점도·히스토그램·상자그림·결측 매트릭스 등 추천 차트 목록.
+    """
     recommendations: list[ChartRecommendation] = []
     if has_correlation:
         recommendations.append(
@@ -276,6 +309,7 @@ def _boxplot_stats(values: pd.Series, column: str) -> dict[str, Any]:
     lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
     inside = values[(values >= lower) & (values <= upper)]
     outliers = values[(values < lower) | (values > upper)]
+
     return {
         "column": column,
         "min": num(values.min()),
@@ -292,9 +326,19 @@ def _boxplot_stats(values: pd.Series, column: str) -> dict[str, Any]:
 
 
 def _thin(frame: pd.DataFrame, limit: int) -> pd.DataFrame:
-    """ROC 곡선처럼 순서가 의미 있는 데이터는 균등 간격으로 솎아낸다."""
+    """ROC 곡선처럼 순서가 의미 있는 데이터는 균등 간격으로 솎아낸다.
+
+    Args:
+        frame (pd.DataFrame): 솎아낼 데이터프레임.
+        limit (int): 남길 최대 행 수.
+
+    Returns:
+        pd.DataFrame: 균등 간격으로 추출된 행만 남은 데이터프레임. 원본이 limit 이하면 그대로 반환.
+    """
+
     if len(frame) <= limit:
         return frame
+
     indices = np.linspace(0, len(frame) - 1, limit).astype(int)
     return frame.iloc[indices]
 
@@ -306,11 +350,13 @@ def _matrix_cells(columns: list[str], matrix: list[list[float | None]]) -> dict[
         for j in range(len(columns))
         if matrix and matrix[i][j] is not None
     ]
+
     return {"columns": columns, "cells": cells}
 
 
 def _confusion_cells(confusion: dict[str, Any]) -> dict[str, Any]:
     labels, matrix = confusion["labels"], confusion["matrix"]
+
     return {
         "labels": labels,
         "cells": [
@@ -322,11 +368,20 @@ def _confusion_cells(confusion: dict[str, Any]) -> dict[str, Any]:
 
 
 def _coefficient_rows(coefficients: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """절편을 제외하고 막대그래프에 바로 쓸 수 있는 행으로 정리한다."""
+    """절편을 제외하고 막대그래프에 바로 쓸 수 있는 행으로 정리한다.
+
+    Args:
+        coefficients (list[dict[str, Any]]): 회귀 계수(또는 오즈비) 원본 목록.
+
+    Returns:
+        list[dict[str, Any]]: 절편(const)을 제외하고 값·유의성·신뢰구간을 정리한 행 목록.
+    """
+
     rows: list[dict[str, Any]] = []
     for row in coefficients:
         if not isinstance(row, dict) or "term" not in row or row["term"] == "const":
             continue
+
         value = row.get("odds_ratio", row.get("coefficient"))
         rows.append(
             {
@@ -340,11 +395,20 @@ def _coefficient_rows(coefficients: list[dict[str, Any]]) -> list[dict[str, Any]
                 "ci_upper": row.get("or_ci_upper", row.get("ci_upper")),
             }
         )
+
     return rows
 
 
 def _tree_graph(tree: dict[str, Any]) -> dict[str, Any]:
-    """중첩 트리를 노드/링크 목록과 계층 구조 양쪽으로 제공한다."""
+    """중첩 트리를 노드/링크 목록과 계층 구조 양쪽으로 제공한다.
+
+    Args:
+        tree (dict[str, Any]): 의사결정나무의 중첩된 노드 구조(루트 노드부터 children으로 재귀).
+
+    Returns:
+        dict[str, Any]: 평탄화된 노드 목록(nodes), 부모-자식 연결 목록(links), 원본 계층 구조(hierarchy).
+    """
+
     nodes: list[dict[str, Any]] = []
     links: list[dict[str, Any]] = []
 
@@ -355,8 +419,7 @@ def _tree_graph(tree: dict[str, Any]) -> dict[str, Any]:
                 "parent": parent,
                 "depth": node["depth"],
                 "branch": branch,
-                "label": node.get("condition")
-                or f"→ {node.get('predicted_class', node.get('predicted_value'))}",
+                "label": node.get("condition") or f"→ {node.get('predicted_class', node.get('predicted_value'))}",
                 "n_samples": node["n_samples"],
                 "impurity": node["impurity"],
                 "is_leaf": node["is_leaf"],
@@ -364,8 +427,10 @@ def _tree_graph(tree: dict[str, Any]) -> dict[str, Any]:
                 "confidence": node.get("confidence"),
             }
         )
+
         if parent is not None:
             links.append({"source": parent, "target": node["node_id"], "branch": branch})
+
         for i, child in enumerate(node.get("children", [])):
             walk(child, node["node_id"], "yes" if i == 0 else "no")
 
@@ -374,13 +439,25 @@ def _tree_graph(tree: dict[str, Any]) -> dict[str, Any]:
 
 
 def scatter_pairs(frame: pd.DataFrame, pairs: list[Any], max_points: int) -> list[dict[str, Any]]:
-    """상관이 높은 상위 쌍의 좌표를 산점도용으로 추출한다."""
+    """상관이 높은 상위 쌍의 좌표를 산점도용으로 추출한다.
+
+    Args:
+        frame (pd.DataFrame): 원본 데이터프레임.
+        pairs (list[Any]): 상관계수 순으로 정렬된 변수 쌍 목록(CorrelationPair 등, x/y/coefficient/p_value 속성 필요).
+        max_points (int): 전체 산점도 점 개수 상한. 쌍당 배분되는 표본 수 계산에 사용.
+
+    Returns:
+        list[dict[str, Any]]: 상위 4개 쌍에 대해 좌표·상관계수·p-value를 담은 산점도 데이터 목록.
+    """
+
     out: list[dict[str, Any]] = []
     per_pair = max(max_points // 4, 100)
     for pair in pairs[:4]:
         subset = frame[[pair.x, pair.y]].dropna()
+
         if subset.empty:
             continue
+
         sampled = sample_points(subset, per_pair)
         out.append(
             {
@@ -389,10 +466,8 @@ def scatter_pairs(frame: pd.DataFrame, pairs: list[Any], max_points: int) -> lis
                 "y_label": pair.y,
                 "coefficient": pair.coefficient,
                 "p_value": pair.p_value,
-                "points": [
-                    {"x": num(x), "y": num(y)}
-                    for x, y in zip(sampled[pair.x], sampled[pair.y], strict=True)
-                ],
+                "points": [{"x": num(x), "y": num(y)} for x, y in zip(sampled[pair.x], sampled[pair.y], strict=True)],
             }
         )
+
     return out

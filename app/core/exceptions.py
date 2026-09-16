@@ -5,7 +5,14 @@ from fastapi.responses import JSONResponse
 
 
 class AppError(Exception):
-    """애플리케이션 기본 예외."""
+    """모든 도메인 예외가 상속하는 애플리케이션 기본 예외.
+
+    Attributes:
+        status_code (int): 이 예외를 HTTP 응답으로 변환할 때 사용할 상태 코드.
+        code (str): 클라이언트에 전달되는 오류 식별 코드.
+        message (str): 사람이 읽을 수 있는 오류 메시지.
+        detail (dict): 오류에 대한 부가 정보.
+    """
 
     status_code = status.HTTP_400_BAD_REQUEST
     code = "app_error"

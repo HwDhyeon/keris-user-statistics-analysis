@@ -20,7 +20,26 @@ def _now() -> datetime:
 
 
 class Dataset(SQLModel, table=True):
-    """반입된 사용자 데이터셋."""
+    """반입된 사용자 데이터셋 1건을 나타내는 테이블.
+
+    Attributes:
+        id (str): 데이터셋 고유 식별자(UUID hex).
+        name (str): 데이터셋 이름.
+        description (str | None): 데이터셋 설명.
+        original_filename (str): 업로드 당시 원본 파일명.
+        source_format (str): 원본 파일 포맷(csv, xlsx 등).
+        storage_path (str): 파싱된 데이터가 저장된 경로.
+        checksum (str): 원본 파일 내용의 체크섬.
+        size_bytes (int): 원본 파일 크기(바이트).
+        n_rows (int): 데이터 행 수.
+        n_cols (int): 데이터 열 수.
+        status (DatasetStatus): 반입 처리 상태.
+        error (str | None): 반입 실패 시 오류 메시지.
+        ingest_options (dict[str, Any]): 반입 시 적용된 옵션(시트, 구분자, 인코딩 등).
+        created_at (datetime): 생성 일시.
+        columns (list[DatasetColumn]): 이 데이터셋에 속한 변수(열) 메타데이터 목록.
+        analyses (list[Analysis]): 이 데이터셋을 대상으로 수행된 분석 목록.
+    """
 
     __tablename__ = "dataset"
 
@@ -49,7 +68,22 @@ class Dataset(SQLModel, table=True):
 
 
 class DatasetColumn(SQLModel, table=True):
-    """데이터셋 변수(열) 메타데이터."""
+    """데이터셋을 구성하는 변수(열) 하나의 메타데이터.
+
+    Attributes:
+        id (str): 열 메타데이터 고유 식별자(UUID hex).
+        dataset_id (str): 소속 데이터셋의 식별자.
+        name (str): 열 이름.
+        position (int): 데이터셋 내 열 순서(0부터 시작).
+        dtype (str): 원본 데이터 타입.
+        role (ColumnRole): 프로파일링으로 추론한 변수 역할.
+        n_missing (int): 결측값 개수.
+        missing_ratio (float): 결측 비율(0~1).
+        n_unique (int): 고유값 개수.
+        categories (list[Any] | None): 범주형 변수의 범주 목록(등장/사전 순서 보존, ORDINAL 인코딩 기준).
+        stats (dict[str, Any]): 열에 대한 기술통계 등 부가 통계 정보.
+        dataset (Dataset | None): 이 열이 속한 데이터셋.
+    """
 
     __tablename__ = "dataset_column"
 
@@ -70,7 +104,26 @@ class DatasetColumn(SQLModel, table=True):
 
 
 class Analysis(SQLModel, table=True):
-    """수행된 분석 1건. 조건과 전처리 로직을 함께 보존한다."""
+    """수행된 분석 1건을 나타내는 테이블. 분석 조건과 전처리 로직을 함께 보존한다.
+
+    Attributes:
+        id (str): 분석 고유 식별자(UUID hex).
+        dataset_id (str): 분석 대상 데이터셋의 식별자.
+        name (str): 분석 이름.
+        method (AnalysisMethod): 사용된 분석 기법.
+        status (AnalysisStatus): 분석 진행 상태.
+        params (dict[str, Any]): 분석 실행에 사용된 파라미터.
+        preprocessing (dict[str, Any]): 분석 전 적용된 전처리 로직/옵션.
+        result (dict[str, Any]): 분석 결과 데이터.
+        metrics (dict[str, Any]): 결정계수·RMSE 등 모델 성능 지표.
+        chart_recommendations (list[dict[str, Any]]): 추천 차트 목록(무엇을 그릴지).
+        chart_data (dict[str, Any]): 차트를 그리는 데 필요한 집계 데이터. 렌더링은 클라이언트가 수행한다.
+        error (str | None): 분석 실패 시 오류 메시지.
+        duration_ms (int | None): 분석 소요 시간(밀리초).
+        created_at (datetime): 생성 일시.
+        completed_at (datetime | None): 완료 일시.
+        dataset (Dataset | None): 분석 대상 데이터셋.
+    """
 
     __tablename__ = "analysis"
 
@@ -95,7 +148,20 @@ class Analysis(SQLModel, table=True):
 
 
 class AnalysisPackage(SQLModel, table=True):
-    """분석 조건·전처리·결과 리포트를 묶은 재현 가능 패키지."""
+    """분석 조건·전처리·결과 리포트를 묶은 재현 가능 패키지.
+
+    Attributes:
+        id (str): 패키지 고유 식별자(UUID hex).
+        name (str): 패키지 이름.
+        description (str | None): 패키지 설명.
+        dataset_id (str | None): 연관된 데이터셋의 식별자.
+        analysis_ids (list[str]): 패키지에 포함된 분석 식별자 목록.
+        manifest (dict[str, Any]): 패키지 구성 내역(조건·전처리·결과 요약 등).
+        archive_path (str | None): 생성된 ZIP 아카이브의 파일 경로.
+        archive_bytes (int): 아카이브 파일 크기(바이트).
+        share_token (str | None): 공유 링크 발급 시 사용되는 토큰.
+        created_at (datetime): 생성 일시.
+    """
 
     __tablename__ = "analysis_package"
 

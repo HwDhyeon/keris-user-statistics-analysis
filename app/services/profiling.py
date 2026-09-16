@@ -25,7 +25,17 @@ def numeric_columns(frame: pd.DataFrame) -> list[str]:
 
 
 def describe_numeric(series: pd.Series, name: str) -> NumericSummary:
-    """평균·중앙값·사분위수를 포함한 기초 통계량."""
+    """평균·중앙값·사분위수를 포함한 수치형 변수의 기초 통계량을 계산한다.
+
+    Args:
+        series (pd.Series): 통계량을 계산할 변수(열) 데이터.
+        name (str): 변수(열) 이름.
+
+    Returns:
+        NumericSummary: 평균·표준편차·사분위수·왜도·첨도 등을 담은 기초 통계량. 유효값이 없으면
+            개수·결측치만 채워진 요약을 반환한다.
+    """
+
     values = pd.to_numeric(series, errors="coerce")
     clean = values.dropna()
     if clean.empty:
@@ -72,7 +82,11 @@ def describe_categorical(series: pd.Series, name: str, top_n: int = 10) -> Categ
         n_unique=int(counts.size),
         mode=_clean(counts.index[0]) if not counts.empty else None,
         top_values=[
-            {"value": _clean(k), "count": int(v), "ratio": round(int(v) / total, 6) if total else 0.0}
+            {
+                "value": _clean(k),
+                "count": int(v),
+                "ratio": round(int(v) / total, 6) if total else 0.0,
+            }
             for k, v in counts.head(top_n).items()
         ],
         entropy=_f(entropy),
@@ -100,7 +114,19 @@ def detect_outliers(
     columns: list[str] | None = None,
     sample_limit: int = 20,
 ) -> list[OutlierReport]:
-    """수치형 변수의 이상치를 자동 탐지한다."""
+    """수치형 변수의 이상치를 자동 탐지한다.
+
+    Args:
+        frame (pd.DataFrame): 이상치를 탐지할 데이터프레임.
+        method (OutlierMethod, optional): 이상치 탐지 방법. Defaults to OutlierMethod.IQR.
+        threshold (float, optional): 이상치 판정 임계값. Defaults to 1.5.
+        columns (list[str] | None, optional): 탐지 대상 열 목록. 미지정 시 모든 수치형 열. Defaults to None.
+        sample_limit (int, optional): 결과에 포함할 이상치 표본 인덱스·값의 최대 개수. Defaults to 20.
+
+    Returns:
+        list[OutlierReport]: 변수별 이상치 개수가 많은 순으로 정렬된 이상치 탐지 결과 목록.
+    """
+
     targets = [c for c in (columns or numeric_columns(frame)) if c in frame.columns]
     reports: list[OutlierReport] = []
 
@@ -110,6 +136,7 @@ def detect_outliers(
     for col in targets:
         if col not in frame.columns:
             continue
+
         values = pd.to_numeric(frame[col], errors="coerce")
         clean = values.dropna()
         if clean.size < 4:
@@ -129,6 +156,7 @@ def detect_outliers(
                 sample_values=[_f(v) or 0.0 for v in clean.loc[idx[:sample_limit]].tolist()],
             )
         )
+
     return sorted(reports, key=lambda r: r.n_outliers, reverse=True)
 
 
@@ -139,7 +167,17 @@ def _detect_outliers_mahalanobis(
 
     개별 변수 값이 아니라 변수 조합이 공분산 구조에서 벗어난 정도(제곱 거리)를 보므로,
     최소 2개 이상의 수치형 변수와 (변수 수 + 1) 이상의 완전 관측치가 필요하다.
+
+    Args:
+        frame (pd.DataFrame): 이상치를 탐지할 데이터프레임.
+        targets (list[str]): 탐지에 사용할 수치형 변수 목록.
+        threshold (float): 카이제곱 임계값. 1.5 이하이면 자유도=변수 수인 카이제곱 분포의 97.5% 분위수를 사용.
+        sample_limit (int): 결과에 포함할 이상치 표본 인덱스·값의 최대 개수.
+
+    Returns:
+        list[OutlierReport]: 변수 조합별 다변량 이상치 탐지 결과 목록. 조건을 만족하지 않으면 빈 목록.
     """
+
     if len(targets) < 2:
         return []
 
@@ -184,7 +222,17 @@ def _detect_outliers_mahalanobis(
 def outlier_mask(
     clean: pd.Series, method: OutlierMethod, threshold: float
 ) -> tuple[np.ndarray, float | None, float | None]:
-    """지정한 방식으로 이상치 여부 마스크와 판정 경계값을 계산한다."""
+    """지정한 방식으로 이상치 여부 마스크와 판정 경계값을 계산한다.
+
+    Args:
+        clean (pd.Series): 결측치가 제거된 수치형 변수 데이터.
+        method (OutlierMethod): 이상치 탐지 방법(IQR, Z-score, Modified Z-score, LOF, Grubbs, Isolation Forest 등).
+        threshold (float): 이상치 판정 임계값. 방법에 따라 의미가 다르다.
+
+    Returns:
+        tuple[np.ndarray, float | None, float | None]: 이상치 여부 불리언 마스크, 하한, 상한.
+            경계값을 정의할 수 없는 방법은 None을 반환한다.
+    """
     if method is OutlierMethod.IQR:
         q1, q3 = float(clean.quantile(0.25)), float(clean.quantile(0.75))
         iqr = q3 - q1
@@ -196,6 +244,7 @@ def outlier_mask(
         std = float(clean.std(ddof=1))
         if std == 0:
             return np.zeros(clean.size, dtype=bool), None, None
+
         z = np.abs((clean - float(clean.mean())) / std)
         mean = float(clean.mean())
         return (z > limit).to_numpy(), mean - limit * std, mean + limit * std
@@ -206,6 +255,7 @@ def outlier_mask(
         mad = float(np.median(np.abs(clean - median)))
         if mad == 0:
             return np.zeros(clean.size, dtype=bool), None, None
+
         z = 0.6745 * np.abs(clean - median) / mad
         span = limit * mad / 0.6745
         return (z > limit).to_numpy(), median - span, median + span
@@ -232,7 +282,15 @@ def outlier_mask(
 
 
 def _grubbs_mask(clean: pd.Series, threshold: float) -> tuple[np.ndarray, float | None, float | None]:
-    """일반화 ESD(Grubbs') 검정: 유의수준 alpha에서 극단값을 하나씩 검정·제거한다."""
+    """일반화 ESD(Grubbs') 검정: 유의수준 alpha에서 극단값을 하나씩 검정·제거한다.
+
+    Args:
+        clean (pd.Series): 결측치가 제거된 수치형 변수 데이터.
+        threshold (float): 검정 유의수준(alpha). 0과 1 사이가 아니면 기본값 0.05를 사용.
+
+    Returns:
+        tuple[np.ndarray, float | None, float | None]: 이상치 여부 불리언 마스크, 하한, 상한.
+    """
     alpha = threshold if 0 < threshold < 1 else 0.05
     values = clean.to_numpy(dtype=float)
     n = values.size
@@ -246,10 +304,12 @@ def _grubbs_mask(clean: pd.Series, threshold: float) -> tuple[np.ndarray, float 
         m = remaining.size
         if m < 3:
             break
+
         mean = working.mean()
         std = working.std(ddof=1)
         if std == 0:
             break
+
         diffs = np.abs(working - mean)
         local_idx = int(np.argmax(diffs))
         g = diffs[local_idx] / std
@@ -267,6 +327,7 @@ def _grubbs_mask(clean: pd.Series, threshold: float) -> tuple[np.ndarray, float 
     std_all = float(clean.std(ddof=1))
     if std_all == 0:
         return mask, None, None
+
     return mask, mean_all - 3 * std_all, mean_all + 3 * std_all
 
 
@@ -277,7 +338,18 @@ def build_profile(
     outlier_method: OutlierMethod = OutlierMethod.IQR,
     outlier_threshold: float = 1.5,
 ) -> DatasetProfile:
-    """반입 데이터의 종합 프로파일."""
+    """반입 데이터의 종합 프로파일(기초 통계·결측·이상치·경고)을 생성한다.
+
+    Args:
+        dataset_id (str): 대상 데이터셋 식별자.
+        frame (pd.DataFrame): 프로파일링할 데이터프레임.
+        outlier_method (OutlierMethod, optional): 이상치 탐지 방법. Defaults to OutlierMethod.IQR.
+        outlier_threshold (float, optional): 이상치 판정 임계값. Defaults to 1.5.
+
+    Returns:
+        DatasetProfile: 수치형·범주형 변수 요약, 결측·이상치 현황, 데이터 품질 경고를 담은 프로파일.
+    """
+
     total_cells = int(frame.size)
     total_missing = int(frame.isna().sum().sum())
 
@@ -332,7 +404,18 @@ def correlation_matrix(
     columns: list[str] | None = None,
     min_abs: float = 0.0,
 ) -> tuple[list[str], list[list[float | None]], list[CorrelationPair]]:
-    """변수 간 상관계수 행렬과 유의확률을 계산한다."""
+    """변수 간 상관계수 행렬과 유의확률을 계산한다.
+
+    Args:
+        frame (pd.DataFrame): 상관관계를 계산할 데이터프레임.
+        method (CorrelationMethod, optional): 상관분석 방법. Defaults to CorrelationMethod.PEARSON.
+        columns (list[str] | None, optional): 분석 대상 열 목록. 미지정 시 모든 수치형 열. Defaults to None.
+        min_abs (float, optional): 이 값 미만의 |r| 쌍은 결과에서 제외. Defaults to 0.0.
+
+    Returns:
+        tuple[list[str], list[list[float | None]], list[CorrelationPair]]: 분석에 사용된 열 이름,
+            상관계수 행렬, |r| 내림차순으로 정렬된 변수 쌍 목록.
+    """
     cols = [c for c in (columns or numeric_columns(frame)) if c in frame.columns]
     if len(cols) < 2:
         return cols, [], []
@@ -350,19 +433,13 @@ def correlation_matrix(
             coef, p_value = _corr_with_p(paired[x], paired[y], method)
             if coef is None or abs(coef) < min_abs:
                 continue
-            pairs.append(
-                CorrelationPair(
-                    x=x, y=y, coefficient=coef, p_value=p_value, strength=_strength(coef)
-                )
-            )
+            pairs.append(CorrelationPair(x=x, y=y, coefficient=coef, p_value=p_value, strength=_strength(coef)))
 
     pairs.sort(key=lambda p: abs(p.coefficient), reverse=True)
     return cols, matrix, pairs
 
 
-def _corr_with_p(
-    x: pd.Series, y: pd.Series, method: CorrelationMethod
-) -> tuple[float | None, float | None]:
+def _corr_with_p(x: pd.Series, y: pd.Series, method: CorrelationMethod) -> tuple[float | None, float | None]:
     if x.nunique() < 2 or y.nunique() < 2:
         return None, None
     try:
@@ -372,8 +449,9 @@ def _corr_with_p(
             res = sps.kendalltau(x, y)
         else:
             res = sps.pearsonr(x, y)
-    except (ValueError, FloatingPointError):
+    except ValueError, FloatingPointError:
         return None, None
+
     return _f(res[0]), _f(res[1])
 
 
@@ -389,13 +467,24 @@ def _strength(coef: float) -> str:
 
 
 def _f(value: Any) -> float | None:
-    """NaN/Inf를 None으로 바꾼 float."""
+    """NaN/Inf를 None으로 바꾼 float.
+
+    Args:
+        value (Any): 변환할 값.
+
+    Returns:
+        float | None: 유한한 float 값. None이거나 변환 불가·NaN·Inf인 경우 None.
+    """
+
     if value is None:
         return None
+
     try:
         result = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
+
     if math.isnan(result) or math.isinf(result):
         return None
+
     return result

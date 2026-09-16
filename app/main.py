@@ -18,7 +18,7 @@ from app.core.exceptions import register_exception_handlers
 STATIC_DIR = Path(__file__).parent / "static"
 
 DESCRIPTION = """
-사용자가 보유한 로컬 파일(CSV·Excel 등)을 반입해 즉시 분석할 수 있는 통계분석 백엔드입니다.
+교육데이터플랫폼의 이용자 통계분석 서비스를 위한 REST API입니다.
 
 * **데이터 반입** — CSV/TSV/Excel/JSON/Parquet 업로드, 인코딩·구분자 자동 판별, 변수 역할 자동 추론
 * **기초 통계·탐색** — 평균·중앙값·사분위수 등 기술통계, 결측치·이상치 자동 탐지, 상관관계 히트맵
@@ -60,7 +60,7 @@ def scalar_docs_html() -> Any:
         openapi_url=app.openapi_url,
         title=f"{app.title} - API Reference",
         scalar_js_url="/static/scalar/scalar-api-reference.js",
-        scalar_favicon_url="/static/swagger-ui/favicon.png",
+        scalar_favicon_url="/static/common/favicon.ico",
         with_default_fonts=False,
         telemetry=False,
     )
@@ -73,7 +73,7 @@ def swagger_ui_html() -> Any:
         title=f"{app.title} - Swagger UI",
         swagger_js_url="/static/swagger-ui/swagger-ui-bundle.js",
         swagger_css_url="/static/swagger-ui/swagger-ui.css",
-        swagger_favicon_url="/static/swagger-ui/favicon.png",
+        swagger_favicon_url="/static/common/favicon.ico",
     )
 
 
@@ -83,6 +83,7 @@ def redoc_html() -> Any:
         openapi_url=app.openapi_url,
         title=f"{app.title} - ReDoc",
         redoc_js_url="/static/redoc/redoc.standalone.js",
+        redoc_favicon_url="/static/common/favicon.ico",
     )
 
 
