@@ -101,8 +101,11 @@ def detect_outliers(
     sample_limit: int = 20,
 ) -> list[OutlierReport]:
     """수치형 변수의 이상치를 자동 탐지한다."""
-    targets = columns or numeric_columns(frame)
+    targets = [c for c in (columns or numeric_columns(frame)) if c in frame.columns]
     reports: list[OutlierReport] = []
+
+    if method is OutlierMethod.MAHALANOBIS:
+        return _detect_outliers_mahalanobis(frame, targets, threshold, sample_limit)
 
     for col in targets:
         if col not in frame.columns:
@@ -124,6 +127,55 @@ def detect_outliers(
                 upper_bound=_f(upper),
                 sample_indices=[int(i) for i in idx[:sample_limit]],
                 sample_values=[_f(v) or 0.0 for v in clean.loc[idx[:sample_limit]].tolist()],
+            )
+        )
+    return sorted(reports, key=lambda r: r.n_outliers, reverse=True)
+
+
+def _detect_outliers_mahalanobis(
+    frame: pd.DataFrame, targets: list[str], threshold: float, sample_limit: int
+) -> list[OutlierReport]:
+    """마할라노비스 거리로 변수 간 관계를 벗어난 다변량 이상치를 탐지한다.
+
+    개별 변수 값이 아니라 변수 조합이 공분산 구조에서 벗어난 정도(제곱 거리)를 보므로,
+    최소 2개 이상의 수치형 변수와 (변수 수 + 1) 이상의 완전 관측치가 필요하다.
+    """
+    if len(targets) < 2:
+        return []
+
+    numeric = frame[targets].apply(pd.to_numeric, errors="coerce")
+    valid = numeric.dropna()
+    dof = len(targets)
+    if valid.shape[0] < dof + 1:
+        return []
+
+    cov = np.atleast_2d(np.cov(valid.to_numpy(), rowvar=False))
+    try:
+        inv_cov = np.linalg.inv(cov)
+    except np.linalg.LinAlgError:
+        inv_cov = np.linalg.pinv(cov)
+
+    diff = valid.to_numpy() - valid.mean().to_numpy()
+    d2 = np.einsum("ij,jk,ik->i", diff, inv_cov, diff)
+
+    # 임계값: 카이제곱 분포(자유도=변수 수)의 97.5% 분위수. threshold로 직접 지정 가능.
+    limit = threshold if threshold > 1.5 else float(sps.chi2.ppf(0.975, dof))
+    mask = d2 > limit
+    outlier_idx = valid.index[mask]
+
+    reports: list[OutlierReport] = []
+    for col in targets:
+        col_values = numeric[col].loc[valid.index]
+        reports.append(
+            OutlierReport(
+                column=str(col),
+                method=OutlierMethod.MAHALANOBIS,
+                n_outliers=int(mask.sum()),
+                ratio=round(float(mask.sum()) / float(valid.shape[0]), 6),
+                lower_bound=None,
+                upper_bound=_f(limit),
+                sample_indices=[int(i) for i in outlier_idx[:sample_limit]],
+                sample_values=[_f(v) or 0.0 for v in col_values.loc[outlier_idx[:sample_limit]].tolist()],
             )
         )
     return sorted(reports, key=lambda r: r.n_outliers, reverse=True)
@@ -158,12 +210,64 @@ def outlier_mask(
         span = limit * mad / 0.6745
         return (z > limit).to_numpy(), median - span, median + span
 
+    if method is OutlierMethod.LOF:
+        from sklearn.neighbors import LocalOutlierFactor
+
+        n = clean.size
+        n_neighbors = min(20, max(2, n - 1))
+        contamination = threshold if 0 < threshold <= 0.5 else "auto"
+        model = LocalOutlierFactor(n_neighbors=n_neighbors, contamination=contamination)
+        pred = model.fit_predict(clean.to_numpy().reshape(-1, 1))
+        return (pred == -1), None, None
+
+    if method is OutlierMethod.GRUBBS:
+        return _grubbs_mask(clean, threshold)
+
     # ISOLATION_FOREST
     from sklearn.ensemble import IsolationForest
 
     model = IsolationForest(contamination="auto", random_state=42)
     pred = model.fit_predict(clean.to_numpy().reshape(-1, 1))
     return (pred == -1), None, None
+
+
+def _grubbs_mask(clean: pd.Series, threshold: float) -> tuple[np.ndarray, float | None, float | None]:
+    """일반화 ESD(Grubbs') 검정: 유의수준 alpha에서 극단값을 하나씩 검정·제거한다."""
+    alpha = threshold if 0 < threshold < 1 else 0.05
+    values = clean.to_numpy(dtype=float)
+    n = values.size
+    mask = np.zeros(n, dtype=bool)
+
+    remaining = np.arange(n)
+    working = values.copy()
+    max_outliers = max(1, n // 2)
+
+    for _ in range(max_outliers):
+        m = remaining.size
+        if m < 3:
+            break
+        mean = working.mean()
+        std = working.std(ddof=1)
+        if std == 0:
+            break
+        diffs = np.abs(working - mean)
+        local_idx = int(np.argmax(diffs))
+        g = diffs[local_idx] / std
+
+        t_crit = sps.t.ppf(1 - alpha / (2 * m), m - 2)
+        g_crit = ((m - 1) / math.sqrt(m)) * math.sqrt(t_crit**2 / (m - 2 + t_crit**2))
+        if g <= g_crit:
+            break
+
+        mask[remaining[local_idx]] = True
+        remaining = np.delete(remaining, local_idx)
+        working = np.delete(working, local_idx)
+
+    mean_all = float(clean.mean())
+    std_all = float(clean.std(ddof=1))
+    if std_all == 0:
+        return mask, None, None
+    return mask, mean_all - 3 * std_all, mean_all + 3 * std_all
 
 
 def build_profile(

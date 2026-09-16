@@ -81,6 +81,15 @@ def build_chart_data(
         counts = sampled["cluster"].value_counts().sort_index()
         data["cluster_sizes"] = [{"cluster": str(k), "count": int(v)} for k, v in counts.items()]
 
+    if (centroid_projection := a.get("centroid_projection")) is not None and not centroid_projection.empty:
+        data["centroid_projection"] = jsonable(centroid_projection)
+
+    if (cluster_rows := a.get("cluster_rows")) is not None and not cluster_rows.empty:
+        data["cluster_rows"] = jsonable(sample_points(cluster_rows, options.max_points))
+
+    if cluster_profiles := a.get("cluster_profiles"):
+        data["cluster_profiles"] = jsonable(cluster_profiles)
+
     if elbow := a.get("elbow"):
         data["elbow"] = jsonable(elbow)
 

@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
+from scalar_fastapi import get_scalar_api_reference
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -54,6 +55,18 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/docs", include_in_schema=False)
+def scalar_docs_html() -> Any:
+    return get_scalar_api_reference(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - API Reference",
+        scalar_js_url="/static/scalar/scalar-api-reference.js",
+        scalar_favicon_url="/static/swagger-ui/favicon.png",
+        with_default_fonts=False,
+        telemetry=False,
+    )
+
+
+@app.get("/swagger", include_in_schema=False)
 def swagger_ui_html() -> Any:
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,

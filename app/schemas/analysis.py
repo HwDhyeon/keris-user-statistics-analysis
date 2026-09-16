@@ -80,6 +80,10 @@ class AnalysisParams(BaseModel):
     eps: float = Field(default=0.5, gt=0)
     min_samples: int = Field(default=5, ge=1)
     auto_k_range: list[int] | None = Field(default=None, description="[최소, 최대] 지정 시 엘보/실루엣 탐색")
+    label_columns: list[str] = Field(
+        default_factory=list,
+        description="원시데이터·잔차표에 표시할 식별자 변수(예: 학교코드, 지역구분). 군집분석에는 사용되지 않음",
+    )
 
     # 차원축소
     n_components: int = Field(default=2, ge=1, le=50)

@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy import stats as sps
 from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
 from sklearn.decomposition import PCA
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
@@ -30,38 +31,134 @@ def _quality(X: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
 
 
 def _profiles(frame: pd.DataFrame, labels: np.ndarray, features: list[str]) -> list[dict[str, Any]]:
-    """군집별 크기와 변수 평균(군집 해석 근거)."""
+    """군집별 크기와 변수 평균(군집 해석 근거).
+
+    z_means는 전체 평균 대비 표준화 편차로, 군집별 프로파일 비교 막대차트에 바로 쓸 수 있다.
+    """
     tagged = frame.copy()
     tagged["_cluster"] = labels
+    numeric_all = tagged[features].apply(pd.to_numeric, errors="coerce")
+    overall_mean = numeric_all.mean()
+    overall_std = numeric_all.std(ddof=0).replace(0, np.nan)
+
     rows: list[dict[str, Any]] = []
     for cluster, group in tagged.groupby("_cluster"):
         numeric = group[features].apply(pd.to_numeric, errors="coerce")
+        means = numeric.mean()
+        z = (means - overall_mean) / overall_std
         rows.append(
             {
                 "cluster": int(cluster),
                 "label": "잡음" if int(cluster) < 0 else f"군집 {int(cluster)}",
                 "size": len(group),
                 "ratio": round(len(group) / len(tagged), 6),
-                "means": {c: num(numeric[c].mean()) for c in numeric.columns},
+                "means": {c: num(means[c]) for c in numeric.columns},
                 "medians": {c: num(numeric[c].median()) for c in numeric.columns},
+                "z_means": {c: num(z[c]) for c in numeric.columns},
             }
         )
     return sorted(rows, key=lambda r: r["cluster"])
 
 
-def _projection(X: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
+def _anova_f_tests(frame: pd.DataFrame, labels: np.ndarray, features: list[str]) -> list[dict[str, Any]]:
+    """변수별 일원분산분석(F검정): 군집이 각 변수를 통계적으로 유의하게 구분하는지 확인한다."""
+    unique_labels = np.unique(labels)
+    results: list[dict[str, Any]] = []
+    for col in features:
+        if col not in frame.columns:
+            continue
+        values = pd.to_numeric(frame[col], errors="coerce")
+        groups = [values[labels == c].dropna().to_numpy() for c in unique_labels]
+        groups = [g for g in groups if g.size > 1]
+        if len(groups) < 2:
+            continue
+        f_stat, p_value = sps.f_oneway(*groups)
+        f_stat, p_value = num(f_stat), num(p_value)
+        results.append(
+            {
+                "feature": col,
+                "f_statistic": f_stat,
+                "p_value": p_value,
+                "significant_001": p_value is not None and p_value < 0.001,
+                "significant_01": p_value is not None and p_value < 0.01,
+                "significant_05": p_value is not None and p_value < 0.05,
+            }
+        )
+    return results
+
+
+def _cluster_rows(
+    frame: pd.DataFrame,
+    X: pd.DataFrame,
+    labels: np.ndarray,
+    centroids: np.ndarray,
+    profiles: list[dict[str, Any]],
+    features: list[str],
+    label_columns: list[str],
+) -> pd.DataFrame:
+    """표본별 원시데이터 + 대표변수 실측/예측(군집평균)/잔차 + 중심으로부터 거리.
+
+    예측치는 각 표본이 속한 군집의 대표변수(첫 번째 피처) 평균값이다. 거리는 표준화된
+    설계행렬(X) 공간에서 배정된 군집 중심까지의 유클리드 거리로, 군집 적합도의 지표다.
+    """
+    primary = features[0]
+    cluster_mean = {p["cluster"]: p["means"].get(primary) for p in profiles}
+
+    actual = pd.to_numeric(frame[primary], errors="coerce").to_numpy(dtype=float)
+    predicted = np.array([cluster_mean.get(int(c)) for c in labels], dtype=float)
+    residual = actual - predicted
+    with np.errstate(divide="ignore", invalid="ignore"):
+        residual_ratio = np.where(actual != 0, residual / actual * 100, np.nan)
+
+    diffs = X.to_numpy() - centroids[labels]
+    distance = np.sqrt((diffs**2).sum(axis=1))
+
+    data: dict[str, Any] = {
+        "row_id": frame.index.astype(str),
+        "cluster": labels.astype(str),
+        "actual": actual,
+        "predicted": predicted,
+        "residual": residual,
+        "residual_ratio": residual_ratio,
+        "distance_to_centroid": distance,
+    }
+    for col in label_columns:
+        if col in frame.columns and col not in data:
+            data[col] = frame[col].astype(str).to_numpy()
+    for col in features:
+        if col not in data:
+            data[col] = pd.to_numeric(frame[col], errors="coerce").to_numpy()
+    return pd.DataFrame(data, index=frame.index)
+
+
+def _projection(
+    X: pd.DataFrame, labels: np.ndarray, centroids: np.ndarray | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """2차원 산점도용 좌표. 변수가 3개 이상이면 PCA로 축약한다.
 
     열 이름은 x/y로 고정하고, 축이 실제로 무엇인지는 x_label/y_label에 담는다.
+    centroids를 주면 포인트와 동일한 좌표계(동일 PCA 변환)로 투영해 함께 반환한다.
     """
+    centroid_values: np.ndarray | None = None
     if X.shape[1] >= 2:
         reduced = X.shape[1] > 2
-        values = PCA(n_components=2, random_state=42).fit_transform(X) if reduced else X.to_numpy()
+        if reduced:
+            pca = PCA(n_components=2, random_state=42)
+            values = pca.fit_transform(X.to_numpy())
+            if centroids is not None:
+                centroid_values = pca.transform(centroids)
+        else:
+            values = X.to_numpy()
+            if centroids is not None:
+                centroid_values = centroids
         axes = ("주성분1", "주성분2") if reduced else (str(X.columns[0]), str(X.columns[1]))
     else:
         values = np.column_stack([X.to_numpy().ravel(), np.zeros(len(X))])
+        if centroids is not None:
+            centroid_values = np.column_stack([centroids[:, 0], np.zeros(len(centroids))])
         axes = (str(X.columns[0]), "")
-    return pd.DataFrame(
+
+    points = pd.DataFrame(
         {
             "x": values[:, 0],
             "y": values[:, 1],
@@ -70,10 +167,20 @@ def _projection(X: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
             "y_label": axes[1],
         }
     )
+    centroid_df = None
+    if centroid_values is not None:
+        centroid_df = pd.DataFrame(
+            {
+                "cluster": [str(i) for i in range(len(centroid_values))],
+                "x": centroid_values[:, 0],
+                "y": centroid_values[:, 1],
+            }
+        )
+    return points, centroid_df
 
 
 def _cluster_scatter_rec(
-    X: pd.DataFrame, reason: str = "군집 간 분리 정도를 2차원에서 확인"
+    X: pd.DataFrame, reason: str = "군집 간 분리 정도를 2차원에서 확인", has_centroids: bool = False
 ) -> Any:
     """군집 산점도 추천. 변수가 3개 이상이면 좌표가 주성분으로 축약됨을 알린다."""
     reduced = X.shape[1] > 2
@@ -84,7 +191,10 @@ def _cluster_scatter_rec(
         1,
         data_key="projection",
         encoding={"x": "x", "y": "y", "color": "cluster"},
-        options={"pca_reduced": reduced},
+        options={
+            "pca_reduced": reduced,
+            **({"centroid_data_key": "centroid_projection"} if has_centroids else {}),
+        },
     )
 
 
@@ -95,6 +205,7 @@ class KMeansEngine:
         design = build_design_matrix(
             frame, features=params.features, target=None,
             weight_column=params.weight_column, spec=spec,
+            extra_columns=params.label_columns,
         )
         X = design.X
         weights = design.weights.to_numpy() if design.weights is not None else None
@@ -122,11 +233,35 @@ class KMeansEngine:
         model = KMeans(n_clusters=k, n_init=10, random_state=params.random_state)
         labels = model.fit_predict(X, sample_weight=weights)
 
+        # 군집 간/전체 분산비(SSB/SST): 군집이 전체 변동을 얼마나 설명하는지.
+        grand_mean = X.mean(axis=0).to_numpy()
+        total_ss = float(np.square(X.to_numpy() - grand_mean).sum())
+        between_ss = total_ss - float(model.inertia_)
+        variance_ratio = (between_ss / total_ss) if total_ss > 0 else None
+
         metrics = _quality(X.to_numpy(), labels) | {
             "inertia": num(model.inertia_),
             "n_iter": int(model.n_iter_),
             "n_clusters": k,
+            "between_ss": num(between_ss),
+            "total_ss": num(total_ss),
+            "variance_ratio": num(variance_ratio),
         }
+
+        profiles = _profiles(design.frame, labels, params.features)
+        anova_tests = _anova_f_tests(design.frame, labels, params.features)
+        sig_features = [t["feature"] for t in anova_tests if t["significant_001"]]
+        summary = (
+            f"전체 {len(X)}개 표본이 {k}개 군집으로 분류되었으며, "
+            + (
+                f"{', '.join(sig_features)} 변수의 군집 간 분산 F검정 결과 모두 p < .001 수준에서 유의함."
+                if sig_features and len(sig_features) == len(anova_tests)
+                else f"{', '.join(sig_features)} 변수는 군집 간 유의한 차이를 보임(p < .001)."
+                if sig_features
+                else "군집 간 변수별 분산 차이가 통계적으로 유의하지 않은 변수가 있음."
+            )
+        )
+
         result = {
             "method": "K-평균 군집분석",
             "features": params.features,
@@ -139,18 +274,38 @@ class KMeansEngine:
                 {"cluster": i, **{str(c): num(v) for c, v in zip(X.columns, row, strict=True)}}
                 for i, row in enumerate(model.cluster_centers_)
             ],
-            "cluster_profiles": _profiles(design.frame, labels, params.features),
+            "cluster_profiles": profiles,
+            "anova": anova_tests,
+            "summary": summary,
             "labels_preview": labels[:200].tolist(),
             "preprocessing_steps": design.steps,
         }
 
-        artifacts = {"projection": _projection(X, labels), "elbow": elbow, "design": design, "labels": labels}
+        projection, centroid_projection = _projection(X, labels, model.cluster_centers_)
+        cluster_rows = _cluster_rows(
+            design.frame, X, labels, model.cluster_centers_, profiles, params.features, params.label_columns
+        )
+        artifacts = {
+            "projection": projection,
+            "centroid_projection": centroid_projection,
+            "cluster_rows": cluster_rows,
+            "cluster_profiles": profiles,
+            "elbow": elbow,
+            "design": design,
+            "labels": labels,
+        }
         recommendations = [
-            _cluster_scatter_rec(X),
+            _cluster_scatter_rec(X, has_centroids=True),
             rec(
                 ChartKind.BAR, "군집별 크기", "군집 균형 확인", 3,
                 data_key="cluster_sizes",
                 encoding={"x": "cluster", "y": "count"},
+            ),
+            rec(
+                ChartKind.BAR, "군집별 주요 지표 프로파일", "전체 평균 대비 군집별 편차(표준화) 비교", 4,
+                data_key="cluster_profiles",
+                encoding={"x": "z_means", "y": "feature", "color": "cluster"},
+                options={"diverging": True, "reference_line": 0},
             ),
         ]
         if elbow:
@@ -209,7 +364,8 @@ class HierarchicalEngine:
             "labels_preview": labels[:200].tolist(),
             "preprocessing_steps": design.steps,
         }
-        artifacts = {"projection": _projection(X, labels), "dendrogram": dendrogram, "design": design}
+        projection, _ = _projection(X, labels)
+        artifacts = {"projection": projection, "dendrogram": dendrogram, "design": design}
         recommendations = [
             _cluster_scatter_rec(X),
             rec(
@@ -255,7 +411,8 @@ class DBSCANEngine:
         if n_clusters == 0:
             result["warning"] = "군집이 형성되지 않았습니다. eps를 키우거나 min_samples를 줄여보세요."
 
-        artifacts = {"projection": _projection(X, labels), "design": design}
+        projection, _ = _projection(X, labels)
+        artifacts = {"projection": projection, "design": design}
         recommendations = [
             _cluster_scatter_rec(X, reason="밀도 기반 군집과 잡음점(-1) 분포 확인")
         ]

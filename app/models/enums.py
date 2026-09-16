@@ -49,6 +49,9 @@ class OutlierMethod(StrEnum):
     ZSCORE = "zscore"
     MODIFIED_ZSCORE = "modified_zscore"
     ISOLATION_FOREST = "isolation_forest"
+    MAHALANOBIS = "mahalanobis"
+    LOF = "lof"
+    GRUBBS = "grubbs"
 
 
 class CorrelationMethod(StrEnum):
